@@ -196,6 +196,13 @@ const DAYS_SHORT=['ПН','ВТ','СР','ЧТ','ПТ','СБ','ВС'];
 const DAYS_FULL=['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье'];
 const BYDAY=['MO','TU','WE','TH','FR','SA','SU'];
 const BYDAY_IDX={MO:0,TU:1,WE:2,TH:3,FR:4,SA:5,SU:6};
+/* Универ, WS 2026/27 (from/until — период семестра, используется в экспорте .ics) */
+const UNI_WS26=[
+  {day:0,start:'12:00',end:'15:15',cat:'uni',label:'Informationsmanagement · A 146'},
+  {day:1,start:'15:30',end:'18:00',cat:'uni',label:'Enterprise Architecture Management · A 003',from:'2026-10-06',until:'2027-02-09'},
+  {day:3,start:'13:45',end:'16:15',cat:'uni',label:'Führung von IT-Unternehmen · A 003',from:'2026-10-08',until:'2027-02-11'},
+  {day:4,start:'13:45',end:'16:15',cat:'uni',label:'ECM-Anwendungen (PCÜ) · A 209',from:'2026-10-02',until:'2027-02-12'},
+];
 const DEFAULTS=[
   {day:0,start:'18:00',end:'21:00',cat:'bjj',label:'BJJ · Movement / Gi / Open Mat'},
   {day:1,start:'12:00',end:'13:00',cat:'bjj',label:'BJJ спарринг (опц.)',soft:true},
@@ -228,6 +235,7 @@ const DEFAULTS=[
   {day:3,start:'08:30',end:'08:50',cat:'es',label:'Испанский · вход',soft:true},
   {day:4,start:'08:30',end:'08:50',cat:'es',label:'Испанский · вход',soft:true},
   {day:5,start:'10:30',end:'10:50',cat:'es',label:'Испанский · вход',soft:true},
+  ...UNI_WS26,
 ];
 
 const STORE_KEY='schedule:blocks', CATS_KEY='schedule:cats';
@@ -254,8 +262,17 @@ const store={
 };
 async function load(){
   const raw=await store.get(STORE_KEY);
-  if(raw){try{const p=JSON.parse(raw);if(Array.isArray(p))return p;}catch(e){}}
+  if(raw){try{const p=JSON.parse(raw);if(Array.isArray(p))return await migrateUni(p);}catch(e){}}
+  await store.set(UNI_KEY,'1');
   const seeded=DEFAULTS.map(b=>({...b,id:uid()}));await persist(seeded);return seeded;
+}
+/* одноразово добавить пары WS 2026/27 в уже сохранённое расписание */
+const UNI_KEY='schedule:seed:uni-ws26';
+async function migrateUni(list){
+  if(await store.get(UNI_KEY))return list;
+  const sig=b=>b.day+'|'+b.start+'|'+b.end+'|'+b.label;const have=new Set(list.map(sig));
+  const next=[...list,...UNI_WS26.filter(b=>!have.has(sig(b))).map(b=>({...b,id:uid()}))];
+  await persist(next);await store.set(UNI_KEY,'1');return next;
 }
 async function persist(next){blocks=next;await store.set(STORE_KEY,JSON.stringify(blocks));}
 async function loadCats(){
@@ -398,12 +415,17 @@ async function reset(){
 function icsEsc(s){return s.replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\n/g,'\\n');}
 function dtStamp(){const d=new Date();return `${d.getUTCFullYear()}${pad(d.getUTCMonth()+1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;}
 function nextDate(dayIdx){const now=new Date();const target=(dayIdx===6)?0:dayIdx+1;const diff=(target-now.getDay()+7)%7;const d=new Date(now);d.setDate(now.getDate()+diff);d.setHours(0,0,0,0);return d;}
+function firstDate(b){
+  if(!b.from)return nextDate(b.day);
+  const [y,m,dd]=b.from.split('-').map(Number);const d=new Date(y,m-1,dd);
+  d.setDate(d.getDate()+(b.day-(d.getDay()+6)%7+7)%7);return d;
+}
 function dtLocal(d,hhmm){const [h,m]=hhmm.split(':').map(Number);return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}T${pad(h)}${pad(m)}00`;}
 function buildICS(){
   const out=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Arman//Raspisanie//RU','CALSCALE:GREGORIAN','METHOD:PUBLISH'];
-  blocks.forEach(b=>{const d=nextDate(b.day);out.push('BEGIN:VEVENT','UID:'+b.id+'@raspisanie','DTSTAMP:'+dtStamp(),
+  blocks.forEach(b=>{const d=firstDate(b);const until=b.until?';UNTIL='+b.until.replace(/-/g,'')+'T235959':'';out.push('BEGIN:VEVENT','UID:'+b.id+'@raspisanie','DTSTAMP:'+dtStamp(),
     'SUMMARY:'+icsEsc(b.label),'DTSTART:'+dtLocal(d,b.start),'DTEND:'+dtLocal(d,b.end),
-    'RRULE:FREQ=WEEKLY;BYDAY='+BYDAY[b.day],'CATEGORIES:'+icsEsc(getCat(b.cat).label),'END:VEVENT');});
+    'RRULE:FREQ=WEEKLY;BYDAY='+BYDAY[b.day]+until,'CATEGORIES:'+icsEsc(getCat(b.cat).label),'END:VEVENT');});
   out.push('END:VCALENDAR');return out.join('\r\n');
 }
 function openExport(){document.getElementById('icsOut').value=buildICS();document.getElementById('ovExport').classList.add('show');}
