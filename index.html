@@ -37,6 +37,8 @@
   .menu.show{display:flex;}
   .menu button{background:none;border:none;color:var(--text);text-align:left;padding:9px 11px;border-radius:7px;font-size:13px;font-family:var(--body);cursor:pointer;}
   .menu button:hover{background:var(--panel-2);}
+  .menusep{height:1px;background:var(--line);margin:4px 2px;}
+  .menu button.menudanger{color:#ff6b6b;}
 
   .legend{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin-bottom:22px;}
   .chip{display:inline-flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);
@@ -126,6 +128,8 @@
       <div class="menu" id="calMenu">
         <button id="exportBtn">↓ Экспорт в .ics</button>
         <button id="importBtn">↑ Импорт из .ics</button>
+        <div class="menusep"></div>
+        <button id="clearAllBtn" class="menudanger">Удалить всё расписание</button>
       </div>
     </div>
   </div>
@@ -406,6 +410,11 @@ async function submitEdit(){
   await persist(next);closeEdit();render();
 }
 async function delBlock(){if(!editId)return;await persist(blocks.filter(b=>b.id!==editId));closeEdit();render();}
+async function clearAll(){
+  if(!blocks.length){toast('Расписание уже пустое');return;}
+  if(!confirm(`Удалить все блоки (${blocks.length})? Это нельзя отменить. Если нужна копия, сначала сделай экспорт в .ics.`))return;
+  await persist([]);render();toast('Расписание очищено');
+}
 async function reset(){
   if(!confirm('Сбросить расписание к дефолтным BJJ-блокам? Твои добавления удалятся.'))return;
   await persist(DEFAULTS.map(b=>({...b,id:uid()})));render();toast('Сброшено к BJJ');
@@ -502,6 +511,7 @@ document.getElementById('exportBtn').onclick=()=>{document.getElementById('calMe
 document.getElementById('closeExport').onclick=()=>document.getElementById('ovExport').classList.remove('show');
 document.getElementById('dlIcs').onclick=()=>download('raspisanie.ics',buildICS());
 document.getElementById('copyIcs').onclick=async()=>{const ta=document.getElementById('icsOut');ta.select();try{await navigator.clipboard.writeText(ta.value);toast('Скопировано');}catch(e){document.execCommand('copy');toast('Скопировано');}};
+document.getElementById('clearAllBtn').onclick=()=>{document.getElementById('calMenu').classList.remove('show');clearAll();};
 document.getElementById('importBtn').onclick=()=>{document.getElementById('calMenu').classList.remove('show');document.getElementById('ovImport').classList.add('show');};
 document.addEventListener('click',()=>document.getElementById('calMenu').classList.remove('show'));
 document.getElementById('closeImport').onclick=()=>document.getElementById('ovImport').classList.remove('show');
